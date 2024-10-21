@@ -1,51 +1,87 @@
-# Hugging Face ML Infrastructure
+# Terraform AWS Bedrock AI Inference Architecture
 
-이 프로젝트는 AWS 인프라를 사용하여 Hugging Face 모델을 동적으로 실행하기 위한 Terraform 코드를 포함하고 있습니다.
+## 개요
+이 Terraform 프로젝트는 **AWS API Gateway**를 통해 **Lambda 함수**를 호출하고, **AWS Bedrock Claude 3.5** 모델에 요청을 보내어 AI 예측을 수행하는 인프라를 배포합니다. **CloudWatch Logs**는 Lambda 실행 로그를 기록하며, **IAM Role**은 API Gateway와 Lambda 간의 권한을 관리합니다.
 
-## 프로젝트 구조
+## 아키텍처
 
-```
-project-root/
-│
-├── terraform/           # Terraform 코드
-│   ├── main.tf          # 주 설정 파일
-│   ├── variables.tf     # 변수 정의
-│   ├── outputs.tf       # 출력 정의
-│   ├── provider.tf      # AWS 프로바이더 설정
-│   │
-│   └── modules/         # Terraform 모듈
-│       ├── vpc/         # VPC 설정
-│       ├── ec2/         # EC2 (GPU 인스턴스) 설정
-│       ├── lambda/      # Lambda 함수 설정
-│       └── s3/          # S3 버킷 설정
-│
-├── src/                 # 소스 코드
-│   ├── lambda_function.py   # Lambda 함수 코드
-│   └── ec2_startup_script.sh # EC2 시작 스크립트
-│
-├── models/              # ML 모델 파일 (S3에 업로드 예정)
-│   └── README.md        # 모델 관리 설명
-│
-└── README.md            # 이 파일
-```
+- **API Gateway**: HTTP 요청을 수신하고 Lambda 함수를 호출합니다.
+- **Lambda**: API Gateway에서 받은 요청을 처리하고 Bedrock 모델을 호출합니다.
+- **AWS Bedrock**: Claude 3.5 모델을 사용해 AI 예측을 수행합니다.
+- **CloudWatch Logs**: Lambda 함수의 실행 로그를 기록합니다.
+- **IAM Role**: API Gateway가 Lambda를 호출할 수 있는 권한, Lambda가 CloudWatch와 Bedrock에 접근할 수 있는 권한을 관리합니다.
 
 ## 사용 방법
 
-1. AWS CLI를 설정하고 필요한 권한이 있는지 확인합니다.
-2. Terraform을 설치합니다.
-3. `terraform/` 디렉토리로 이동합니다.
-4. `terraform init`을 실행하여 Terraform을 초기화합니다.
-5. `terraform plan`을 실행하여 생성될 리소스를 확인합니다.
-6. `terraform apply`를 실행하여 인프라를 생성합니다.
-7. 생성된 S3 버킷에 Hugging Face 모델 파일을 업로드합니다.
-8. Lambda 함수를 트리거하여 ML 작업을 시작합니다.
+### 1. 사전 요구 사항
+- [Terraform](https://www.terraform.io/downloads.html)이 설치되어 있어야 합니다.
+- AWS CLI가 설정되어 있어야 합니다.
+- AWS 계정이 필요합니다.
 
-## 주의사항
+### 2. 배포
 
-- 이 인프라는 비용이 발생할 수 있는 리소스를 생성합니다. 사용하지 않을 때는 `terraform destroy`를 실행하여 리소스를 삭제하세요.
-- 보안 설정을 신중히 검토하고 필요에 따라 조정하세요.
-- 실제 운영 환경에서 사용하기 전에 충분한 테스트를 진행하세요.
+1. 이 저장소를 클론합니다:
 
-## 라이센스
+   ```bash
+   git clone <저장소 URL>
+   cd terraform-sagemaker-api/terraform_new
+   ```
 
-이 프로젝트는 [MIT 라이센스](LICENSE)하에 제공됩니다.
+2. Terraform 모듈을 초기화합니다:
+
+   ```bash
+   terraform init
+   ```
+
+3. Terraform 배포를 시작합니다:
+
+   ```bash
+   terraform apply
+   ```
+
+4. API Gateway의 엔드포인트 URL을 확인하려면 `terraform apply` 명령이 완료된 후 출력되는 `api_endpoint` 값을 확인하십시오.
+
+### 3. 테스트
+
+배포가 완료되면, 제공된 API Gateway URL을 사용하여 **POST** 요청을 보낼 수 있습니다. 예를 들어, 다음과 같은 `curl` 명령으로 테스트할 수 있습니다:
+
+```bash
+curl -X POST https://{api_endpoint} \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Explain the theory of relativity."}'
+```
+
+### 4. 정리
+
+Terraform으로 배포한 리소스를 정리하려면 다음 명령을 사용합니다:
+
+```bash
+terraform destroy
+```
+
+## 파일 구조
+
+```
+terraform
+├── main.tf                     # Root module for calling submodules
+├── modules
+│   ├── api_gateway
+│   │   ├── main.tf             # API Gateway and integration with Lambda
+│   │   ├── outputs.tf          # Outputs for API Gateway
+│   │   └── variables.tf        # Variables for API Gateway module
+│   ├── iam
+│   │   ├── main.tf             # IAM Role and Policies for Lambda
+│   │   └── outputs.tf          # Outputs for IAM Role
+│   └── lambda
+│       ├── main.tf             # Lambda Function definition
+│       ├── outputs.tf          # Outputs for Lambda
+│       └── variables.tf        # Variables for Lambda module
+└── src
+    ├── inference.py             # Lambda function source code
+    └── lambda_function_payload.zip # Zipped Lambda function
+```
+
+## 주의 사항
+
+- 이 인프라는 **AWS 요금**이 발생할 수 있습니다. 배포된 리소스는 사용 후 반드시 정리(`terraform destroy`)하시기 바랍니다.
+- Lambda 함수에서 **AWS Bedrock 모델**을 호출하므로 **AI 모델 사용 요금**이 발생할 수 있습니다.
